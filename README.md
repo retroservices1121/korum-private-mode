@@ -2,12 +2,33 @@
 
 Korum Private Mode is the open-source client and on-device runtime behind
 <https://korum.to/private>. It is a private AI chat that runs entirely in your
-browser: inference uses [WebLLM](https://github.com/mlc-ai/web-llm) 0.2.88 on
-WebGPU inside a Web Worker, so your prompts and replies stay on your device.
+browser. Inference runs on your device, and your prompts and replies stay there.
 
 This repository contains the Private Mode client and runtime only.
 
-## Model tiers
+## Built-in models
+
+Private Mode defaults to the browser's built-in model when it can run. Desktop
+Chrome 148 or later provides Gemini Nano, and Chrome handles any initial model
+download when you click **Enable**. Microsoft Edge provides Aion Instruct as a
+developer preview behind a browser flag or an origin trial. Korum has no Edge
+origin-trial registration. [Chrome Prompt API](https://developer.chrome.com/docs/ai/prompt-api),
+[Edge Prompt API](https://learn.microsoft.com/en-us/microsoft-edge/web-platform/prompt-api)
+
+Private Mode requires a secure context and a verified Google Chrome or Microsoft
+Edge brand in `navigator.userAgentData.brands` before using the Prompt API.
+This gate matters because the API itself does not guarantee local inference.
+
+The Apple Foundation Models provider is a stub for a future native iOS or macOS
+shell and always reports unavailable on the web.
+
+## WebLLM model tiers
+
+WebLLM 0.2.88 runs these opt-in **Better quality** upgrades on WebGPU inside a
+Web Worker. Choose a tier and start the download while you keep chatting with
+the built-in model. You can switch when the tier is ready. Private Mode reuses
+complete cached downloads and remembers your provider and tier choices. If the
+built-in model is unavailable, you can still choose a WebLLM tier.
 
 The catalog is in `lib/private/core/model-catalog.ts`. Every tier comes in two
 builds: `q4f16_1` for GPUs that support `shader-f16`, and `q4f32_1` for GPUs
@@ -72,13 +93,22 @@ Each guarantee below lists where the code enforces it and which tests check
 it.
 
 - **On-device inference.** All engines implement `LocalProvider`
-  (`lib/private/core/local-provider.ts`). The only real engine is WebLLM, which
-  runs in a dedicated worker (`lib/private/web/webllm-worker.ts`).
+  (`lib/private/core/local-provider.ts`). The browser built-in model uses
+  the Prompt API without sending requests from the page. Google documents
+  Gemini Nano's offline behavior in Chrome.
+
+  > Subsequent use of the model does not require a network connection. No data is sent to Google or any third party when using the model.
+
+  [Google's Prompt API documentation](https://developer.chrome.com/docs/ai/prompt-api)
+
+  `e2e/builtin.spec.ts` verifies that enabling the built-in model and chatting
+  make zero page requests once the offline shell is ready. WebLLM runs in a
+  dedicated worker (`lib/private/web/webllm-worker.ts`).
   `tests/private-no-network.test.ts` uses a mock provider to check for network
   calls during send, stream, stop, regenerate, copy, export and thread management.
-- **No cloud fallback.** If no tier can run, the app shows an unavailable
-  state (`components/private/unavailable-state.tsx`) and never uses a remote
-  model. See `lib/private/web/engine-recovery.ts` and
+- **No cloud fallback.** If neither on-device option can run, the app shows
+  an unavailable state (`components/private/unavailable-state.tsx`). See
+  `lib/private/core/provider-policy.ts` and
   `tests/private-unavailable.test.tsx`. In `e2e/privacy.spec.ts`, a production
   build without a GPU shows this state. The test checks observed traffic for
   cross-origin requests and calls to a server API.
@@ -90,15 +120,16 @@ it.
   - Chats are stored in IndexedDB, in the `korum-private` database
     (`lib/private/web/thread-store.ts`). They have no extra at-rest encryption
     beyond the browser's origin isolation.
-  - Model files are stored in the browser's Cache Storage.
-  - Small preferences, such as the tier choice and failure history, are stored
-    in `localStorage`.
+  - WebLLM model files are stored in Cache Storage. The browser manages its
+    own built-in model.
+  - Provider and tier choices and failure history are stored in `localStorage`.
   - Export to JSON or Markdown writes a local file (`lib/private/core/thread-export.ts`)
     and uploads nothing.
-  - The app asks for `navigator.storage.persist()` once when a model is ready
-    and once when the first chat is saved (`lib/private/web/storage-persistence.ts`).
-    If storage isn't protected, it suggests exporting your chats.
-- **Hash-pinned models.**
+  - The app asks for `navigator.storage.persist()` when a WebLLM download starts,
+    when a WebLLM model is ready, and when the first chat is saved
+    (`lib/private/web/storage-persistence.ts`). If storage isn't protected, it
+    suggests exporting your chats.
+- **Hash-pinned WebLLM models.**
   - `lib/private/core/model-pins.generated.json` pins every model file to an
     exact upstream revision, byte size and SHA-256. Each WebGPU kernel library
     is pinned to an exact commit, size and SHA-256.
@@ -128,8 +159,9 @@ it.
 **Limits:**
 
 - The first page load needs network access, and so does each model download.
-- The models host (Cloudflare R2 by default) sees the download requests,
-  including your IP address and which model files you fetch.
+- The WebLLM models host (Cloudflare R2 by default) sees WebLLM download
+  requests, including your IP address and which model files you fetch. Your
+  browser manages built-in model downloads separately.
 - You have to trust your browser, its WebGPU implementation and your GPU
   driver.
 - Anyone with access to your browser profile can read your local data.
@@ -139,8 +171,8 @@ it.
 ## Requirements
 
 - Node.js 22 or later (`engines` in `package.json`).
-- A browser with WebGPU. The unavailable-state copy names current desktop
-  Chrome or Edge, or Safari 26 on macOS. On Safari, Private Mode is labelled
+- A supported browser with a usable built-in model or a desktop browser with
+  WebGPU for WebLLM. On Safari, Private Mode is labelled
   as beta ("Private Mode on Safari is in beta"), and the app shows a notice
   that Safari's storage-eviction rules apply.
 
@@ -169,7 +201,8 @@ npm run test:e2e    # Playwright (Chromium and WebKit)
   It runs the unavailable-state, privacy, CSP and offline tests.
 - **Port 3101:** the same app built with `KORUM_E2E_MOCK_PROVIDER=1` into a
   separate `.next-e2e-mock` directory. A scripted mock engine replaces WebLLM,
-  so the chat UI tests can run without a GPU.
+  so the chat UI tests can run without a GPU. Built-in tests install a fake
+  Prompt API and exercise the real adapter in Chromium and WebKit.
 
 The end-to-end setup has these safeguards:
 
@@ -227,28 +260,13 @@ The mirror must use the key layout from `keyLayout` in the pins file:
 
 ## Extending
 
-To add another on-device runtime, such as a browser built-in model:
-
-1. Add a `LocalRuntimeId` and implement `LocalProvider` in
-   `lib/private/core/local-provider.ts`. The web factory also expects
-   `dispose()` for cleanup.
-2. Register the factory in `PROVIDERS` in `lib/private/web/provider-factory.ts`.
-   Update `DEFAULT_PROVIDER` to make it the default or pass its ID to
-   `createLocalProvider()` to select it explicitly.
-3. Implement the provider's `capability()` check. `PrivateApp` calls it through
-   `probeFor()`. The current `CapabilityReport` describes WebGPU and storage
-   capabilities used by `pickTier`.
-4. Adapt model selection for the new runtime. `LocalModelDescriptor` currently
-   requires a `ModelTier` and a `WebLLMArtifact`. The selection and download flow
-   in `components/private/model-setup.tsx` and
-   `components/private/private-app.tsx`, along with
-   `lib/private/core/tier-policy.ts`, assumes WebLLM catalog tiers. A built-in
-   model needs a descriptor suited to that runtime and a path that bypasses
-   WebLLM tier selection and its artifact download flow.
-
-Code in
-`lib/private/core/` must stay free of React, Next, DOM, `fetch` and storage
-APIs. `tests/private-boundary.test.ts` enforces this.
+Add a runtime ID and model descriptor in
+`lib/private/core/local-provider.ts`, implement `LocalProvider`, and integrate
+the provider in `lib/private/web/provider-factory.ts`. Provider selection lives
+in `lib/private/core/provider-policy.ts` and lifecycle management in
+`lib/private/web/engine-manager.ts`. Keep `lib/private/core/` free of React,
+Next, DOM, `fetch` and storage APIs. `tests/private-boundary.test.ts` enforces
+this.
 
 ## Licenses
 
@@ -258,6 +276,8 @@ Copyright 2026 Mobi Media, Inc. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
 The model weights are **not** part of this repository and are **not**
 relicensed by this project. Each model keeps its own license:
 
+- **Gemini Nano and Aion Instruct:** their browser vendors provide them under
+  their own terms. This repository does not distribute either model.
 - **Qwen3-8B, Qwen3-4B, Qwen3-1.7B:** Apache License 2.0, by the Qwen team
   (Alibaba Cloud). Each model card lists `license: apache-2.0` and ships an
   Apache-2.0 LICENSE.

@@ -14,6 +14,8 @@ import {
   type LoadProgress,
 } from "@/lib/private/core/local-provider";
 import { findCatalogModel } from "@/lib/private/core/model-catalog";
+import { engineArtifacts } from "@/lib/private/core/model-pins";
+import { MODELS_BASE_URL } from "@/lib/private/core/models-host";
 
 import { probeCapability } from "./capability-probe";
 import type { WorkerRequest, WorkerResponse } from "./worker-protocol";
@@ -119,14 +121,24 @@ export class WebLLMLocalProvider implements LocalProvider {
     return probeCapability();
   }
 
-  isCached(model: LocalModelDescriptor): Promise<boolean> {
-    return this.call<boolean>({ type: "has_cache", artifact: model.artifact }).catch(() => false);
+  async isCached(model: LocalModelDescriptor): Promise<boolean> {
+    // Cache Storage is shared with the worker. Check presence without opening
+    // empty caches or loading its bundle. The worker still verifies bytes on load.
+    try {
+      for (const pin of engineArtifacts(model.artifact.modelId, MODELS_BASE_URL)) {
+        if (!await caches.match(pin.url, { cacheName: pin.cache })) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async load(
     model: LocalModelDescriptor,
     onProgress: (progress: LoadProgress) => void,
     signal?: AbortSignal,
+    allowDownload = true,
   ): Promise<void> {
     if (signal?.aborted) throw new LocalRuntimeError("cancelled");
     const onAbort = () => void this.call({ type: "cancel_load" }).catch(() => undefined);
@@ -135,6 +147,7 @@ export class WebLLMLocalProvider implements LocalProvider {
       await this.call(
         {
           type: "load",
+          allowDownload,
           artifact: model.artifact,
           disableThinking: findCatalogModel(model.id)?.hybridThinking ?? true,
         },

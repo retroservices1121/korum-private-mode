@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { engineArtifacts } from "@/lib/private/core/model-pins";
+import { MODELS_BASE_URL } from "@/lib/private/core/models-host";
 import { LocalRuntimeError } from "@/lib/private/core/local-provider";
 import { WebLLMLocalProvider, type WorkerLike } from "@/lib/private/web/webllm-provider";
 import type { WorkerRequest, WorkerResponse } from "@/lib/private/web/worker-protocol";
@@ -48,7 +50,7 @@ const settle = <T,>(p: Promise<T>) =>
 
 describe("WebLLMLocalProvider worker failures", () => {
   it.each(["error", "messageerror"] as const)(
-    "worker %s rejects/settles load, cache check, token count and stream; resets; retries",
+    "worker %s rejects/settles load, token count and stream; resets; retries",
     async (event) => {
       const { provider, workers } = setup();
       let failures = 0;
@@ -64,7 +66,6 @@ describe("WebLLMLocalProvider worker failures", () => {
       );
       await new Promise((r) => setTimeout(r, 0));
       const counted = provider.countTokens(["a"]);
-      const cached = provider.isCached(descriptor("M"));
       workers[0].autoLoad = false;
       const loading = settle(provider.load(descriptor("S"), () => {}));
       await new Promise((r) => setTimeout(r, 0));
@@ -77,7 +78,6 @@ describe("WebLLMLocalProvider worker failures", () => {
       expect(s.ok).toBe(false);
       expect((s as { error: LocalRuntimeError }).error.kind).toBe("worker_failed");
       expect(await counted).toBeNull();
-      expect(await cached).toBe(false);
       const l = await loading;
       expect(l.ok).toBe(false);
       expect((l as { error: LocalRuntimeError }).error.kind).toBe("worker_failed");
@@ -110,4 +110,22 @@ describe("WebLLMLocalProvider worker failures", () => {
     old.onerror?.({}); // stale handler must not kill worker #2
     expect(workers[1].terminated).toBe(false);
   });
+});
+
+
+it("checks every pinned cache entry without spawning a WebLLM worker", async () => {
+  const { provider, workers } = setup();
+  const model = descriptor("M");
+  const pins = engineArtifacts(model.artifact.modelId, MODELS_BASE_URL);
+  const match = vi.fn<CacheStorage["match"]>(async () => new Response());
+  vi.stubGlobal("caches", { match });
+  try {
+    expect(await provider.isCached(model)).toBe(true);
+    expect(match.mock.calls).toEqual(pins.map((pin) => [pin.url, { cacheName: pin.cache }]));
+    match.mockImplementationOnce(async () => undefined);
+    expect(await provider.isCached(model)).toBe(false);
+    expect(workers).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

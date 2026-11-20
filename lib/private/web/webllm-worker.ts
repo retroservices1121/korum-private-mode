@@ -74,6 +74,7 @@ function classify(error: unknown): LocalRuntimeErrorKind {
   if (error instanceof IntegrityError || name === "IntegrityError") return "integrity_failed";
   const text = String((error as { message?: string })?.message ?? error).toLowerCase();
   if (name === "QuotaExceededError" || text.includes("quota")) return "quota_exceeded";
+  if (name === "ArtifactCacheMissError") return "cache_missing";
   if (name === "AbortError") return "cancelled";
   if (text.includes("out of memory") || text.includes("oom") || text.includes("allocation")) {
     return "out_of_memory";
@@ -105,7 +106,7 @@ async function handle(request: WorkerRequest): Promise<void> {
       loadedModelId = null;
       downloadController = new AbortController();
       const pins = engineArtifacts(request.artifact.modelId, MODELS_BASE_URL);
-      await access.prepare(pins, (fraction) => post({ id: request.id, type: "progress", fraction, text: "Checking model files…" }), downloadController.signal);
+      await access.prepare(pins, (fraction) => post({ id: request.id, type: "progress", fraction, text: "Checking model files…" }), downloadController.signal, request.allowDownload);
       access.guard(pins);
       engine = new MLCEngine({
         appConfig: appConfigFor(request.artifact),
@@ -129,11 +130,6 @@ async function handle(request: WorkerRequest): Promise<void> {
       downloadController.abort();
       await engine?.unload().catch(() => undefined);
       post({ id: request.id, type: "result", value: true });
-      return;
-    }
-    case "has_cache": {
-      const complete = await access.complete(engineArtifacts(request.artifact.modelId, MODELS_BASE_URL));
-      post({ id: request.id, type: "result", value: complete });
       return;
     }
     case "delete_cache": {
@@ -201,7 +197,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     if (kind === "device_lost") loadedModelId = null;
     post({ id: request.id, type: "error", kind });
   });
-  if (request.type === "load" || request.type === "delete_cache" || request.type === "has_cache") {
+  if (request.type === "load" || request.type === "delete_cache") {
     operationQueue = operationQueue.then(run);
   } else {
     void run();

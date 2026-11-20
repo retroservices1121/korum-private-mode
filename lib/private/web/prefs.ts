@@ -1,9 +1,10 @@
 /**
- * Private Mode preferences in localStorage: tier choice, failure
- * memory and the device id. No content is ever written here.
+ * Private Mode preferences in localStorage: provider and tier
+ * choice, failure memory and the device id. No content is ever written here.
  */
 
 import { TIER_ORDER, type ModelTier } from "@/lib/private/core/model-catalog";
+import type { ProviderPreference } from "@/lib/private/core/provider-policy";
 import { ulid } from "@/lib/private/core/thread-schema";
 import type { FailureHistory, TierChoice } from "@/lib/private/core/tier-policy";
 
@@ -12,6 +13,11 @@ const KEY = "korum-private-prefs";
 export interface PrivatePrefs {
   deviceId: string;
   choice: TierChoice;
+  /**
+   * The model the user chose last: the browser's built-in one or a WebLLM
+   * tier. `null` until they choose; the built-in model is then the default.
+   */
+  provider: ProviderPreference;
   failures: FailureHistory;
   /** The Safari storage notice was acknowledged. */
   safariNoticeSeen: boolean;
@@ -31,7 +37,7 @@ export function prefsExist(): boolean {
 }
 
 export function loadPrefs(): PrivatePrefs {
-  const fallback: PrivatePrefs = { deviceId: ulid(), choice: "auto", failures: {}, safariNoticeSeen: false };
+  const fallback: PrivatePrefs = { deviceId: ulid(), choice: "auto", provider: null, failures: {}, safariNoticeSeen: false };
   const raw = storage()?.getItem(KEY);
   if (!raw) {
     savePrefs(fallback);
@@ -51,6 +57,7 @@ export function loadPrefs(): PrivatePrefs {
         typeof parsed.choice === "string" && (TIER_ORDER as readonly string[]).includes(parsed.choice)
           ? (parsed.choice as ModelTier)
           : "auto",
+      provider: parsed.provider === "builtin" || parsed.provider === "webllm" ? parsed.provider : null,
       failures,
       safariNoticeSeen: parsed.safariNoticeSeen === true,
     };

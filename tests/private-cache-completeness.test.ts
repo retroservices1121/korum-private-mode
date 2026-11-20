@@ -72,10 +72,4 @@ describe("model cache completeness", () => {
     };
     expect(await missingArtifacts(artifact, true, broken)).toEqual(["config", "tokenizer", "wasm"]);
   });
-
-  it("the worker reports cached only when nothing is missing", async () => {
-    const src = (await import("node:fs")).readFileSync("lib/private/web/webllm-worker.ts", "utf8");
-    expect(src).toMatch(/access.complete\(engineArtifacts/);
-    expect(src).toMatch(/value: complete/);
-  });
 });

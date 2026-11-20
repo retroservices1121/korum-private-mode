@@ -52,9 +52,11 @@ describe("G2 integrity", () => {
     network.mockImplementation(async () => new Response(good));
     await access.prepare([p], () => {}, new AbortController().signal);
     expect(cache.put).toHaveBeenCalledOnce();
-    expect(await access.complete([p])).toBe(true);
+    expect(entries.has(p.url)).toBe(true);
     access.guard([p]);
     entries.clear();
+    await expect(access.prepare([p], () => {}, new AbortController().signal, false))
+      .rejects.toMatchObject({ name: "ArtifactCacheMissError" });
     await expect((await storage.open(p.cache)).match(p.url)).rejects.toThrow("missing");
     expect(network).toHaveBeenCalledTimes(2);
   });

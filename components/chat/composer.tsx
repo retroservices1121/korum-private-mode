@@ -32,6 +32,7 @@ export function Composer({
   autoFocus,
   modeSlot,
   disabled = false,
+  submitDisabled = false,
   placeholder = "Ask anything...",
   footnote,
 }: {
@@ -44,6 +45,7 @@ export function Composer({
   modeSlot?: React.ReactNode;
   /** Disables typing and sending entirely. */
   disabled?: boolean;
+  submitDisabled?: boolean;
   placeholder?: string;
   footnote?: string;
 }) {
@@ -69,10 +71,10 @@ export function Composer({
 
   const submit = useCallback(() => {
     const trimmed = value.trim();
-    if (!trimmed || streaming || disabled) return;
+    if (!trimmed || streaming || disabled || submitDisabled) return;
     setValue("");
     onSubmit(trimmed);
-  }, [disabled, onSubmit, streaming, value]);
+  }, [disabled, onSubmit, streaming, submitDisabled, value]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter sends, Shift+Enter breaks the line. IME composition must never be
@@ -159,7 +161,7 @@ export function Composer({
               type="submit"
               size="icon"
               className="size-8 rounded-[10px]"
-              disabled={disabled || value.trim().length === 0}
+              disabled={disabled || submitDisabled || value.trim().length === 0}
               aria-label="Send message"
             >
               <ArrowUp className="size-4" />

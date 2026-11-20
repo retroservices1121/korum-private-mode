@@ -5,6 +5,11 @@ export class ArtifactIntegrityError extends Error {
   constructor() { super("A model file failed its integrity check and was removed. Download again?"); }
 }
 
+class ArtifactCacheMissError extends Error {
+  name = "ArtifactCacheMissError";
+  constructor() { super("Model cache entry missing"); }
+}
+
 /** Return a response backed by the very bytes hashed, eliminating a second cache read. */
 export async function verifyArtifact(cache: Pick<Cache, "delete">, pin: EngineArtifact, response: Response): Promise<Response> {
   const bytes = await response.arrayBuffer();
@@ -21,13 +26,14 @@ export function artifactAccess(storage: CacheStorage, network: typeof fetch) {
   const open = storage.open.bind(storage);
   let activePins: EngineArtifact[] = [];
   const access = {
-    async prepare(pins: EngineArtifact[], progress: (fraction: number) => void, signal: AbortSignal) {
+    async prepare(pins: EngineArtifact[], progress: (fraction: number) => void, signal: AbortSignal, allowDownload = true) {
       for (const [i, pin] of pins.entries()) {
         signal.throwIfAborted();
         progress(i / pins.length);
         const cache = await open(pin.cache);
         let response = await cache.match(pin.url);
         if (!response) {
+          if (!allowDownload) throw new ArtifactCacheMissError();
           response = await network(pin.url, { signal, credentials: "omit", redirect: "error", cache: "no-store" });
           if (!response.ok) throw new Error("Model download failed");
           await cache.put(pin.url, await verifyArtifact(cache, pin, response));
@@ -38,10 +44,6 @@ export function artifactAccess(storage: CacheStorage, network: typeof fetch) {
     },
     async remove(pins: EngineArtifact[]) {
       for (const pin of pins) await (await open(pin.cache)).delete(pin.url);
-    },
-    async complete(pins: EngineArtifact[]) {
-      for (const pin of pins) if (!await (await open(pin.cache)).match(pin.url)) return false;
-      return true;
     },
     /** WebLLM 0.2.88 uses caches.open(scope).match(Request) then consumes its response.
      * Verify every engine read, including repeated loads and entries replaced by another tab.
@@ -60,7 +62,7 @@ export function artifactAccess(storage: CacheStorage, network: typeof fetch) {
         const pin = activePins.find((p) => p.cache === name && p.url === url);
         if (!pin) throw new Error("Unpinned model artifact refused");
         const response = await target.match(request);
-        if (!response) throw new Error("Model cache entry missing; download again");
+        if (!response) throw new ArtifactCacheMissError();
         return verifyArtifact(target, pin, response);
       };
       if (prop === "add" || prop === "addAll" || prop === "put") return async () => { throw new Error("Engine network/cache writes refused"); };

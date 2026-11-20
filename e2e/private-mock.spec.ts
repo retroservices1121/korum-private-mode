@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Page } from "@playwright/test";
 
+import { installFakeLanguageModel } from "./support/fake-language-model";
 import { expect, test } from "./support/fixtures";
 import type { NetworkGuard } from "./support/network";
 import { MOCK_URL } from "./support/urls";
@@ -9,9 +10,15 @@ import { MOCK_URL } from "./support/urls";
 /**
  * Prompt privacy against the production build made with
  * KORUM_E2E_MOCK_PROVIDER=1. The real /private UI, store, controller and
- * renderer run; only the WebLLM engine is replaced by the scripted
- * `E2EMockLocalProvider`, whose answer echoes the prompt's canary into remote,
+ * renderer run with either the scripted WebLLM provider or a fake Prompt API.
+ * Both echo the prompt's canary into remote,
  * same-origin and data: images, raw `<img>` HTML, inline code and a link.
+ *
+ * Every test runs twice: on the browser's built-in model (a fake
+ * `LanguageModel` with Chrome brands, installed by an init script, driving the
+ * REAL Prompt API provider — the default when present) and on the scripted
+ * WebLLM engine (no `LanguageModel`, so the cached mock tier loads). Both
+ * answer with the same canary Markdown.
  *
  * The service worker is blocked here: this build publishes no offline shell
  * (the offline test runs on the normal build).
@@ -30,7 +37,10 @@ declare global {
   }
 }
 
-async function openReady(page: Page) {
+type Engine = "builtin" | "webllm";
+
+async function openReady(page: Page, engine: Engine) {
+  if (engine === "builtin") await installFakeLanguageModel(page, { availability: "available", brand: "Google Chrome" });
   // Collects CSP violations: an image the renderer tried to load would show up here even though
   // the CSP stops it before any request.
   await page.addInitScript(() => {
@@ -42,6 +52,9 @@ async function openReady(page: Page) {
   await page.goto("/private");
   await expect(page.locator("#korum-composer")).toBeEnabled();
   await expect(page.locator("#korum-composer")).toHaveAttribute("placeholder", "Ask privately…");
+  const chip = page.getByText(/^Private · On this device · /);
+  if (engine === "builtin") await expect(chip).toContainText("Gemini Nano (built into Chrome)");
+  else await expect(chip).not.toContainText("Gemini Nano");
 }
 
 async function send(page: Page, text: string, turn: number) {
@@ -64,14 +77,14 @@ async function expectNoLeak(guard: NetworkGuard, canary: string) {
   expect(images, guard.describe(images).join("\n")).toEqual([]);
 }
 
-test.describe("Private Mode with the scripted on-device engine", () => {
+for (const engine of ["builtin", "webllm"] as const) test.describe(`Private Mode with the scripted on-device engine (${engine})`, () => {
   test("Markdown canaries render with zero requests; links need confirmation; Cancel does nothing", async ({
     page,
     context,
     guard,
   }) => {
     const canary = `KORUM-CANARY-${randomUUID()}`;
-    await openReady(page);
+    await openReady(page, engine);
     const before = (await guard.settle()).length;
 
     await send(page, `Render this ${canary}`, 1);
@@ -129,7 +142,7 @@ test.describe("Private Mode with the scripted on-device engine", () => {
   test("copy, thumbs and regenerate are local only", async ({ page, guard, browserName, context }) => {
     if (browserName === "chromium") await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const canary = `KORUM-CANARY-${randomUUID()}`;
-    await openReady(page);
+    await openReady(page, engine);
     await send(page, `Actions ${canary}`, 1);
     const before = (await guard.settle()).length;
 
@@ -162,7 +175,7 @@ test.describe("Private Mode with the scripted on-device engine", () => {
   }) => {
     test.setTimeout(180_000);
     const canary = `KORUM-CANARY-${randomUUID()}`;
-    await openReady(page);
+    await openReady(page, engine);
     for (let turn = 1; turn <= 20; turn++) await send(page, `Turn ${turn}: ${canary}`, turn);
     const userTurns = page.locator("main").getByText(new RegExp(`^Turn \\d+: ${canary}$`));
     await expect(userTurns).toHaveCount(20);

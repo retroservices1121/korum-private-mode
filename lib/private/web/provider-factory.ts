@@ -1,13 +1,14 @@
 /**
- * Picks the Private Mode engine.
+ * Creates the Private Mode engines.
  *
- * Every engine implements `LocalProvider` (`lib/private/core/local-provider.ts`)
- * plus `dispose()`. The factory selects the engine and delegates the device
- * probe to `provider.capability()`. The README describes how to extend
- * model selection for another engine.
+ * `createBuiltinProvider()`: the browser's built-in model (Prompt API), only
+ * for a vendor `detectBuiltin()` verified (Chrome or Edge). Always the real
+ * adapter, in every build; the e2e suite exercises it with a fake
+ * `LanguageModel` installed by a test init script.
  *
- * End-to-end test builds are the one exception: built with
- * `KORUM_E2E_MOCK_PROVIDER=1`, the scripted mock engine replaces everything.
+ * `createLocalProvider()`: the WebLLM engine (the opt-in upgrade tiers). Always WebLLM, except in a build made for the
+ * end-to-end suite with `KORUM_E2E_MOCK_PROVIDER=1`.
+ *
  * `process.env.KORUM_E2E_MOCK_PROVIDER` is replaced at build time with a
  * string literal ("1" or "0") by `env` in `next.config.ts`, so in a normal
  * build the mock branch is `"0" === "1"`, removed by the bundler together with
@@ -16,30 +17,29 @@
  * Playwright suite.
  */
 
-import type { CapabilityReport, LocalProvider, LocalRuntimeId } from "@/lib/private/core/local-provider";
+import type { CapabilityReport, LocalProvider } from "@/lib/private/core/local-provider";
+import type { BuiltinVendor } from "@/lib/private/core/provider-policy";
 
+import { probeCapability } from "./capability-probe";
+import { BuiltinPromptApiProvider } from "./prompt-api";
 import { WebLLMLocalProvider } from "./webllm-provider";
 
 export type PrivateEngine = LocalProvider & { dispose(): void };
 
-/** Runtime id → factory. Only runtimes that are actually implemented are listed. */
-export const PROVIDERS: Partial<Record<LocalRuntimeId, () => Promise<PrivateEngine>>> = {
-  webllm: async () => new WebLLMLocalProvider(),
-};
-
-export const DEFAULT_PROVIDER: LocalRuntimeId = "webllm";
-
-export async function createLocalProvider(runtime: LocalRuntimeId = DEFAULT_PROVIDER): Promise<PrivateEngine> {
+export async function createLocalProvider(): Promise<PrivateEngine> {
   if (process.env.KORUM_E2E_MOCK_PROVIDER === "1") {
     const { E2EMockLocalProvider } = await import("./e2e-mock-provider");
     return new E2EMockLocalProvider();
   }
-  const create = PROVIDERS[runtime];
-  if (!create) throw new Error(`No Private Mode provider registered for ${runtime}`);
-  return create();
+  return new WebLLMLocalProvider();
 }
 
-/** The device probe, delegated to the engine so each runtime reports what it needs. */
+/** The device probe; the e2e mock engine reports its own (fake) capable device. */
 export function probeFor(provider: PrivateEngine): Promise<CapabilityReport> {
-  return provider.capability();
+  if (process.env.KORUM_E2E_MOCK_PROVIDER === "1") return provider.capability();
+  return probeCapability();
+}
+
+export function createBuiltinProvider(vendor: BuiltinVendor): BuiltinPromptApiProvider {
+  return new BuiltinPromptApiProvider(vendor);
 }

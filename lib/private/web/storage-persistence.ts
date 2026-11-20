@@ -5,16 +5,17 @@
  * the whole origin: model and chats. `navigator.storage.persist()` asks for
  * an exemption. Rules:
  *   - `persisted()` is checked on load (no prompt, no side effects);
- *   - `persist()` is requested at two moments only: when a model finishes
- *     setting up, and when the first chat is saved — each at most ONCE per
- *     session, and never again once granted. No retry loop.
+ *   - `persist()` is requested at three moments only: when a WebLLM model
+ *     download starts (an opt-in upgrade), when a model finishes setting up,
+ *     and when the first chat is saved — each at most ONCE per session, and
+ *     never again once granted. No retry loop.
  *   - the result drives the status line and, when not protected, a nudge to
  *     export chats.
  * No network: these are local browser APIs.
  */
 
 export type PersistState = "checking" | "persisted" | "not_persisted" | "unsupported";
-export type PersistTrigger = "model_ready" | "first_chat_saved";
+export type PersistTrigger = "model_download_started" | "model_ready" | "first_chat_saved";
 
 export interface StorageManagerLike {
   persisted?: () => Promise<boolean>;

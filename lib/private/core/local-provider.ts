@@ -1,16 +1,11 @@
 /**
  * Private Mode portable core: the on-device inference contract.
  *
- * `LocalProvider` is the one seam between the app and an inference runtime.
- * It has no cost, no end-user id, no web search and no citations: local
- * inference is free, unattributed and offline. Every runtime (today WebLLM;
- * later e.g. a browser built-in model) implements this interface and is
- * chosen in `lib/private/web/provider-factory.ts`. Model selection currently
- * uses the WebLLM catalog.
+ * Each runtime implements LocalProvider. The platform shell handles runtime
+ * selection and access to platform APIs.
  *
- * PORTABLE CORE RULE: nothing in `lib/private/core/` may touch React,
- * Next, the DOM, `fetch`, storage globals or Node built-ins. Enforced by
- * `tests/private-boundary.test.ts`.
+ * Nothing in lib/private/core may touch React, Next, the DOM, fetch, storage
+ * globals or Node built-ins. Enforced by tests/private-boundary.test.ts.
  */
 
 import type { AIFinishReason, AIMessage } from "@/lib/ai/types";
@@ -18,11 +13,16 @@ import type { AIFinishReason, AIMessage } from "@/lib/ai/types";
 import type { ModelTier, WebLLMArtifact } from "./model-catalog";
 
 /**
- * Identifies an inference runtime. Only "webllm" is implemented in this repo;
- * a new runtime adds its id here and registers a factory in
- * `lib/private/web/provider-factory.ts`.
+ * `webllm`: the KORUM-hosted open-weights tiers (WebGPU, Web Worker).
+ * `builtin-prompt-api`: the model built into the browser (Chrome's Gemini
+ * Nano, Edge's Aion Instruct) through the `LanguageModel` Prompt API.
+ * `builtin-apple-foundation`: Apple's Foundation Models through a future
+ * native shell bridge; a stub on the web (see `provider-policy.ts`).
  */
-export type LocalRuntimeId = "webllm";
+export type LocalRuntimeId =
+  | "webllm"
+  | "builtin-prompt-api"
+  | "builtin-apple-foundation";
 
 /**
  * Everything `pickTier` needs to know about a device, gathered by the shell's
@@ -53,12 +53,17 @@ export interface CapabilityReport {
   isSafari: boolean;
 }
 
-export interface LocalModelDescriptor {
-  /** Logical catalog id, e.g. `local/qwen3-4b`. */
+/** What the chat controller needs to know about any on-device model. */
+export interface ModelDescriptorBase {
+  /** Logical id, e.g. `local/qwen3-4b` or `builtin/chrome`. Stored on messages. */
   id: string;
-  tier: ModelTier;
   displayName: string;
   contextWindowTokens: number;
+}
+
+/** A downloadable WebLLM tier from the pinned catalog. */
+export interface LocalModelDescriptor extends ModelDescriptorBase {
+  tier: ModelTier;
   /** The concrete runtime build to load. */
   artifact: WebLLMArtifact;
 }
@@ -98,11 +103,14 @@ export type LocalRuntimeErrorKind =
   | "download_failed"
   | "quota_exceeded"
   | "integrity_failed"
+  | "cache_missing"
   | "context_exceeded"
   | "cancelled"
   | "not_loaded"
   /** The engine worker crashed or failed to start; a retry spawns a new one. */
   | "worker_failed"
+  /** The browser refused to start its built-in model download without a click (user activation). */
+  | "not_allowed"
   | "unknown";
 
 export class LocalRuntimeError extends Error {
@@ -124,13 +132,18 @@ export class LocalRuntimeError extends Error {
   }
 }
 
-export interface LocalProvider {
+/**
+ * One on-device runtime. Generic over the descriptor it loads: WebLLM takes a
+ * catalog tier, the built-in Prompt API takes a `BuiltinModelDescriptor`.
+ * The chat controller only streams and counts, so it accepts any of them.
+ */
+export interface LocalProvider<M extends ModelDescriptorBase = LocalModelDescriptor> {
   readonly id: LocalRuntimeId;
   capability(): Promise<CapabilityReport>;
   /** Whether the model's artifacts are already in local storage. */
-  isCached(model: LocalModelDescriptor): Promise<boolean>;
+  isCached(model: M): Promise<boolean>;
   load(
-    model: LocalModelDescriptor,
+    model: M,
     onProgress: (progress: LoadProgress) => void,
     signal?: AbortSignal,
   ): Promise<void>;
@@ -143,5 +156,5 @@ export interface LocalProvider {
   stream(request: LocalStreamRequest): AsyncIterable<LocalChunk>;
   unload(): Promise<void>;
   /** Remove the model's cached artifacts. */
-  deleteCached(model: LocalModelDescriptor): Promise<void>;
+  deleteCached(model: M): Promise<void>;
 }

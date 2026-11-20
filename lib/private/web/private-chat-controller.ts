@@ -13,8 +13,9 @@ import { deriveTitle } from "@/lib/chat/title";
 import { localBudget, tooLongMessage } from "@/lib/private/core/context-budget";
 import {
   LocalRuntimeError,
-  type LocalModelDescriptor,
+  type ModelDescriptorBase,
   type LocalProvider,
+  type LocalRuntimeId,
 } from "@/lib/private/core/local-provider";
 import { ThinkFilter } from "@/lib/private/core/think-filter";
 import { threadToJSON, threadToMarkdown, exportFileName } from "@/lib/private/core/thread-export";
@@ -57,12 +58,17 @@ export interface PrivateChatState {
   activeThreadId: string | null;
   messages: LocalMessage[];
   streamingId: string | null;
+  turnInProgress: boolean;
   /** Set when an existing install had messages cut off by a closed tab. */
   recoveredInterrupted: number;
 }
 
+/** Any on-device runtime: the controller only counts tokens and streams. */
+export type ChatProvider = LocalProvider<ModelDescriptorBase>;
+
 export interface ControllerDeps {
-  provider: LocalProvider;
+  /** The initial engine; `setModel(model, provider)` can switch it. */
+  provider: ChatProvider;
   store: ThreadStore;
   profileKey: ProfileKey;
   deviceId: string;
@@ -70,8 +76,8 @@ export interface ControllerDeps {
   now?: () => number;
   /** A user message was written to this device (used to request persistent storage). */
   onUserMessageSaved?: () => void;
-  /** Runtime failures during generation (e.g. device lost), kind only. */
-  onRuntimeError?: (error: LocalRuntimeError) => void;
+  /** Runtime failures during generation (e.g. device lost), kind only, with the engine that failed. */
+  onRuntimeError?: (error: LocalRuntimeError, provider: LocalRuntimeId) => void;
 }
 
 const ERROR_TEXT: Partial<Record<LocalRuntimeError["kind"], string>> = {
@@ -86,10 +92,12 @@ export class PrivateChatController {
     activeThreadId: null,
     messages: [],
     streamingId: null,
+    turnInProgress: false,
     recoveredInterrupted: 0,
   };
   private listeners = new Set<() => void>();
-  private model: LocalModelDescriptor | null = null;
+  private model: ModelDescriptorBase | null = null;
+  private provider: ChatProvider;
   /**
    * The one in-flight generation. It owns its message record, so its final
    * write never depends on which thread is on screen.
@@ -108,6 +116,7 @@ export class PrivateChatController {
 
   constructor(private readonly deps: ControllerDeps) {
     this.now = deps.now ?? Date.now;
+    this.provider = deps.provider;
   }
 
   // ------------------------------------------------------------ subscription
@@ -136,8 +145,19 @@ export class PrivateChatController {
   }
 
   // ------------------------------------------------------------------ setup
-  setModel(model: LocalModelDescriptor | null) {
+  /**
+   * Sets the model for the NEXT generation, optionally on another engine
+   * (built-in model ↔ WebLLM tier). An in-flight generation keeps the engine
+   * it started on.
+   */
+  setModel(model: ModelDescriptorBase | null, provider?: ChatProvider) {
     this.model = model;
+    if (provider) this.provider = provider;
+  }
+
+  /** The id of the model the next generation would use. */
+  get modelId(): string | null {
+    return this.model?.id ?? null;
   }
 
   async init(): Promise<void> {
@@ -220,6 +240,7 @@ export class PrivateChatController {
     content: string,
     at: number,
     status: LocalMessage["status"],
+    localModel?: string,
   ): LocalMessage {
     return {
       id: ulid(at),
@@ -229,7 +250,7 @@ export class PrivateChatController {
       role,
       content,
       origin: "local",
-      ...(role === "assistant" && this.model ? { localModel: this.model.id } : {}),
+      ...(localModel ? { localModel } : {}),
       status,
       createdAt: at,
       updatedAt: at,
@@ -260,30 +281,44 @@ export class PrivateChatController {
   async send(text: string): Promise<SendResult> {
     const trimmed = text.trim();
     if (!trimmed) return { status: "ignored" };
-    if (this.state.streamingId || !this.model) return { status: "ignored" };
+    const { model, provider } = this;
+    if (this.state.turnInProgress || !model) return { status: "ignored" };
 
-    let thread: LocalThread;
-    let user: LocalMessage;
+    this.set({ turnInProgress: true });
     try {
-      thread = await this.ensureThread(trimmed);
-      user = this.newMessage(thread.id, "user", trimmed, this.now(), "complete");
-      await this.deps.store.putMessage(user);
-    } catch {
-      return { status: "save_failed" };
+      let thread: LocalThread;
+      let user: LocalMessage;
+      try {
+        thread = await this.ensureThread(trimmed);
+        user = this.newMessage(thread.id, "user", trimmed, this.now(), "complete");
+        await this.deps.store.putMessage(user);
+      } catch {
+        return { status: "save_failed" };
+      }
+      this.set({ messages: [...this.state.messages, user] });
+      this.deps.onUserMessageSaved?.();
+      await this.generate(thread.id, model, provider);
+      return { status: "sent" };
+    } finally {
+      this.set({ turnInProgress: false });
     }
-    this.set({ messages: [...this.state.messages, user] });
-    this.deps.onUserMessageSaved?.();
-    await this.generate(thread.id);
-    return { status: "sent" };
   }
 
   async regenerate(): Promise<void> {
-    if (this.state.streamingId || !this.model || !this.state.activeThreadId) return;
-    const last = this.state.messages.at(-1);
+    const { model, provider } = this;
+    const { activeThreadId, messages, turnInProgress } = this.state;
+    if (turnInProgress || !model || !activeThreadId) return;
+    const last = messages.at(-1);
     if (!last || last.role !== "assistant") return;
-    await this.deps.store.deleteMessage(last.id);
-    this.set({ messages: this.state.messages.slice(0, -1) });
-    await this.generate(this.state.activeThreadId);
+
+    this.set({ turnInProgress: true });
+    try {
+      await this.deps.store.deleteMessage(last.id);
+      this.set({ messages: this.state.messages.slice(0, -1) });
+      await this.generate(activeThreadId, model, provider);
+    } finally {
+      this.set({ turnInProgress: false });
+    }
   }
 
   stop(): void {
@@ -295,15 +330,18 @@ export class PrivateChatController {
     return error.isLoadCapacityFailure || error.kind === "not_loaded" || error.kind === "worker_failed";
   }
 
-  private generate(threadId: string): Promise<void> {
-    const model = this.model!;
+  private generate(
+    threadId: string,
+    model: ModelDescriptorBase,
+    provider: ChatProvider,
+  ): Promise<void> {
     // Cancellation exists before any async step, so Stop works during
     // token counting too.
     const abort = new AbortController();
     const genId = this.nextGenId++;
     const history = this.historyFor(this.state.messages);
     const at = Math.max(this.now(), (this.state.messages.at(-1)?.createdAt ?? 0) + 1);
-    let record = this.newMessage(threadId, "assistant", "", at, "streaming");
+    let record = this.newMessage(threadId, "assistant", "", at, "streaming", model.id);
 
     const visible = () => this.gen?.id === genId && this.state.activeThreadId === threadId;
     const update = (patch: Partial<LocalMessage>) => {
@@ -321,13 +359,14 @@ export class PrivateChatController {
 
     const run = async () => {
       let content = "";
-      const filter = new ThinkFilter();
+      // Only the WebLLM tiers (Qwen3) can emit `<think>` blocks.
+      const filter = provider.id === "webllm" ? new ThinkFilter() : null;
       try {
         await persist();
 
         let counts: number[] | null = null;
         try {
-          counts = await this.deps.provider.countTokens([
+          counts = await provider.countTokens([
             PRIVATE_SYSTEM_PROMPT,
             ...history.map((m) => m.content),
           ]);
@@ -360,13 +399,13 @@ export class PrivateChatController {
 
         let lastFlush = this.now();
         try {
-          for await (const chunk of this.deps.provider.stream({
+          for await (const chunk of provider.stream({
             messages: budget.messages,
             maxTokens: MAX_OUTPUT_TOKENS,
             signal: abort.signal,
           })) {
             if (chunk.type !== "text") continue;
-            const shown = filter.push(chunk.text);
+            const shown = filter ? filter.push(chunk.text) : chunk.text;
             if (!shown) continue;
             content += shown;
             update({ content });
@@ -375,10 +414,10 @@ export class PrivateChatController {
               await persist();
             }
           }
-          content += filter.flush();
+          content += filter?.flush() ?? "";
           update({ content, status: "complete" });
         } catch (error) {
-          content += filter.flush();
+          content += filter?.flush() ?? "";
           if (abort.signal.aborted) {
             update({ content, status: "complete" });
           } else {
@@ -392,15 +431,15 @@ export class PrivateChatController {
                 errorKind: runtime.kind,
               });
             } else {
-              if (PrivateChatController.isCapacityFailure(runtime)) this.model = null;
+              if (PrivateChatController.isCapacityFailure(runtime) && this.model === model) this.model = null;
               update({
                 content:
                   content || (ERROR_TEXT[runtime.kind] ?? "The on-device model could not answer that."),
                 status: content ? "interrupted" : "error",
                 errorKind: runtime.kind,
               });
-              this.deps.onRuntimeError?.(runtime);
             }
+            this.deps.onRuntimeError?.(runtime, provider.id);
           }
         }
         await persist();

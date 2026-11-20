@@ -1,7 +1,7 @@
 /**
  * Messages between the Private Mode page and `webllm-worker.ts`. A KORUM-owned
  * protocol (rather than WebLLM's own worker wrapper) so the page can ask for
- * token counts, cache presence and content-free error kinds.
+ * token counts and content-free error kinds.
  *
  * Error frames carry a `LocalRuntimeErrorKind` only, never runtime text, which
  * can echo model input.
@@ -12,9 +12,8 @@ import type { LocalRuntimeErrorKind } from "@/lib/private/core/local-provider";
 import type { WebLLMArtifact } from "@/lib/private/core/model-catalog";
 
 export type WorkerRequest =
-  | { id: number; type: "load"; artifact: WebLLMArtifact; disableThinking: boolean }
+  | { id: number; type: "load"; artifact: WebLLMArtifact; disableThinking: boolean; allowDownload: boolean }
   | { id: number; type: "cancel_load" }
-  | { id: number; type: "has_cache"; artifact: WebLLMArtifact }
   | { id: number; type: "delete_cache"; artifact: WebLLMArtifact }
   | { id: number; type: "count_tokens"; texts: string[] }
   | {
