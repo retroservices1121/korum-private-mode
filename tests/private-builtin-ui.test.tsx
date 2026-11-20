@@ -10,7 +10,7 @@ import { enableLabel } from "@/components/private/builtin-setup";
 import { UPGRADE_HEADING } from "@/components/private/model-setup";
 import { UNAVAILABLE_HEADLINE } from "@/components/private/unavailable-state";
 
-import { CHROME_NAV, EDGE_NAV, fakeLanguageModel, OPERA_NAV } from "./helpers/fake-language-model";
+import { CHROME_NAV, EDGE_NAV, fakeLanguageModel, OLDER_EDGE_NAV, OPERA_NAV, UNVERSIONED_EDGE_NAV } from "./helpers/fake-language-model";
 import { installNetworkTrap } from "./helpers/network-trap";
 
 /**
@@ -198,6 +198,33 @@ describe("/private with the browser's built-in model", () => {
     await waitFor(() => !textarea().disabled);
     expect(text()).toContain("Aion Instruct (built into Edge)");
     expect(text()).toContain("Microsoft says: “The data input to the model never leaves the device.”");
+  });
+
+  it.each([OLDER_EDGE_NAV, UNVERSIONED_EDGE_NAV])("Edge without a confirmed 158+ version uses neutral copy", async (nav) => {
+    setBrowser(nav, fakeLanguageModel({ availability: "downloadable" }), false);
+    await renderApp();
+    await waitFor(() => Boolean(button(enableLabel("edge"))));
+    expect(text()).toContain("Microsoft Edge built-in model");
+    expect(text()).not.toContain("Aion Instruct");
+    expect(text()).toContain("Microsoft says: “The data input to the model never leaves the device.”");
+
+    await click(button(enableLabel("edge")));
+    await waitFor(() => !textarea().disabled);
+    expect(text()).toContain("On this device: Microsoft Edge built-in model");
+    expect(text()).not.toContain("Aion Instruct");
+  });
+
+  it("terminal Enable failure hides the retry card and disables chat without WebGPU", async () => {
+    const fake = fakeLanguageModel({ availability: "downloadable", createErrors: ["NotSupportedError"] });
+    setBrowser(CHROME_NAV, fake, false);
+    await renderApp();
+    await waitFor(() => Boolean(button(enableLabel("chrome"))));
+    await click(button(enableLabel("chrome")));
+
+    await waitFor(() => text().includes(UNAVAILABLE_HEADLINE));
+    expect(button(enableLabel("chrome"))).toBeUndefined();
+    expect(textarea().disabled).toBe(true);
+    expect(webllmState.loads).toBe(0);
   });
 
   it.each([

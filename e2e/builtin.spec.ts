@@ -11,8 +11,8 @@ import { expect, test, UNAVAILABLE_HEADLINE } from "./support/fixtures";
  *
  * Plain headless Chromium itself exposes a real `LanguageModel` (it reports
  * "downloadable") with a Chrome-like UA but, under the shared fixture, no
- * `userAgentData` (the fixture hides it to exercise main-shell telemetry); the other specs rely on that being refused as
- * unverified. The fake here replaces it and adds Chrome brands.
+ * `userAgentData`. The fixture hides it to keep the real built-in API out of
+ * tests for unavailable and WebLLM paths. The fake here adds Chrome brands.
  *
  * Proves: it is the default, a browser download needs a click and shows
  * progress, a chat sends nothing anywhere (no foreign origin, no /api, the

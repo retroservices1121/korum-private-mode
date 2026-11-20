@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { LocalRuntimeError, type LocalChunk } from "@/lib/private/core/local-provider";
-import { BUILTIN_LANGUAGES, builtinDescriptor } from "@/lib/private/core/provider-policy";
+import { BUILTIN_LANGUAGES, BUILTIN_MODEL, builtinDescriptor } from "@/lib/private/core/provider-policy";
 import { detectAppleFoundation } from "@/lib/private/web/apple-foundation";
 import {
   BuiltinPromptApiProvider,
@@ -12,7 +12,7 @@ import {
   type BrowserLike,
 } from "@/lib/private/web/prompt-api";
 
-import { CHROME_NAV, EDGE_NAV, fakeLanguageModel, OPERA_NAV } from "./helpers/fake-language-model";
+import { CHROME_NAV, EDGE_NAV, fakeLanguageModel, OLDER_EDGE_NAV, OPERA_NAV, UNVERSIONED_EDGE_NAV } from "./helpers/fake-language-model";
 import { installNetworkTrap } from "./helpers/network-trap";
 
 /**
@@ -96,9 +96,22 @@ describe("detectBuiltin", () => {
     },
   );
 
-  it("Edge exposing the API → Aion Instruct", async () => {
-    const fake = fakeLanguageModel({ availability: "available" });
-    expect(await detectBuiltin(browser(EDGE_NAV, fake))).toEqual({ kind: "available", vendor: "edge" });
+  it.each([
+    ["confirmed Edge 158", EDGE_NAV, "builtin/edge-aion-instruct", "Aion Instruct (built into Edge)"],
+    ["Edge UA version fallback", { ...UNVERSIONED_EDGE_NAV, userAgent: EDGE_NAV.userAgent },
+      "builtin/edge-aion-instruct", "Aion Instruct (built into Edge)"],
+    ["older Edge", OLDER_EDGE_NAV, "builtin/edge", "Microsoft Edge built-in model"],
+    ["brand version takes precedence", { ...OLDER_EDGE_NAV, userAgent: EDGE_NAV.userAgent },
+      "builtin/edge", "Microsoft Edge built-in model"],
+    ["unversioned Edge", UNVERSIONED_EDGE_NAV, "builtin/edge", "Microsoft Edge built-in model"],
+  ] as const)("%s reports the correct model identity", async (_name, nav, id, displayName) => {
+    expect(identifyBuiltinVendor(nav, true)).toBe("edge");
+    const status = await detectBuiltin(browser(nav, fakeLanguageModel({ availability: "available" })));
+    expect(status.kind).toBe("available");
+    if (status.kind !== "available") throw new Error("Expected an available Edge model");
+    const key = status.model ?? status.vendor;
+    expect(builtinDescriptor(key)).toMatchObject({ vendor: "edge", id, displayName });
+    expect(BUILTIN_MODEL[key].modelName).toBe(id === "builtin/edge" ? displayName : "Aion Instruct");
   });
 
   it("plain Chromium-like browser: API present, Chrome UA, no brands (secure context) → unverified", async () => {

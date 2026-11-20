@@ -6,7 +6,7 @@ import type { UnavailableReason } from "@/lib/private/core/tier-policy";
 /** Copy for the unavailable state. Exported for tests. */
 export const UNAVAILABLE_HEADLINE = "Private Mode isn't available in this browser on this device.";
 export const UNAVAILABLE_BODY =
-  "Private Mode needs one of two things: a browser with a built-in AI model that runs on the device (desktop Chrome with Gemini Nano, or Edge with Aion Instruct), or a desktop browser with WebGPU, such as current Chrome or Edge, or Safari 26 on macOS, to run a model you download from KORUM.";
+  "Private Mode needs one of two things: a browser with a built-in AI model that runs on the device (desktop Chrome with Gemini Nano, or Edge with a built-in model), or a desktop browser with WebGPU, such as current Chrome or Edge, or Safari 26 on macOS, to run a model you download from KORUM.";
 
 const DETAIL: Record<UnavailableReason, string> = {
   no_webgpu: "This browser does not offer WebGPU.",
@@ -39,10 +39,12 @@ export function builtinDetail(status: BuiltinStatus): string {
 export function UnavailableState({
   reason,
   builtin = { kind: "absent" },
+  builtinUnsupported = false,
   onRetryBlocked,
 }: {
   reason: UnavailableReason;
   builtin?: BuiltinStatus;
+  builtinUnsupported?: boolean;
   onRetryBlocked?: () => void;
 }) {
   return (
@@ -51,7 +53,7 @@ export function UnavailableState({
       <h1 className="text-lg font-semibold tracking-tight">{UNAVAILABLE_HEADLINE}</h1>
       <p className="text-muted-foreground text-sm leading-6">{UNAVAILABLE_BODY}</p>
       <ul className="text-muted-foreground space-y-1 text-xs">
-        <li data-unavailable="builtin">Built-in model: {builtinDetail(builtin)}</li>
+        <li data-unavailable="builtin">Built-in model: {builtinUnsupported ? "The browser’s built-in model couldn’t start on this device." : builtinDetail(builtin)}</li>
         <li data-unavailable="webllm">Downloadable models: {DETAIL[reason]}</li>
       </ul>
       <p className="text-muted-foreground text-xs">

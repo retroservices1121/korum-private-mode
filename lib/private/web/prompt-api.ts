@@ -4,7 +4,8 @@
  *   - Chrome 148+ desktop: Gemini Nano, downloaded separately by Chrome
  *     the first time an origin uses the API.
  *     https://developer.chrome.com/docs/ai/prompt-api
- *   - Edge: Aion Instruct, a developer preview behind a flag or origin trial.
+ *   - Edge: a built-in model in developer preview. Edge 158 or later uses
+ *     Aion Instruct.
  *     KORUM registers no origin trial; Edge is supported by feature detection.
  *     https://learn.microsoft.com/en-us/microsoft-edge/web-platform/prompt-api
  *
@@ -118,6 +119,15 @@ export function identifyBuiltinVendor(
   return null;
 }
 
+/** Model naming only. The verified Edge brand is required separately. */
+function edgeMajorVersion(nav: BrowserLike["navigator"]): number {
+  const version = nav?.userAgentData?.brands?.find(({ brand }) => brand === "Microsoft Edge")?.version;
+  const brandMajor = /^(\d+)(?:\.\d+)*$/.exec(version ?? "")?.[1];
+  const uaMajor = /\bEdg\/(\d+)(?:\.\d+)*(?=\s|$)/.exec(nav?.userAgent ?? "")?.[1];
+  const major = Number(brandMajor ?? uaMajor);
+  return Number.isSafeInteger(major) ? major : 0;
+}
+
 /** Local queries only: `availability()` never downloads anything. */
 export async function detectBuiltin(win: BrowserLike = browserGlobal()): Promise<BuiltinStatus> {
   const api = win.LanguageModel;
@@ -126,19 +136,22 @@ export async function detectBuiltin(win: BrowserLike = browserGlobal()): Promise
   }
   const vendor = identifyBuiltinVendor(win.navigator, win.isSecureContext);
   if (!vendor) return { kind: "unverified" };
+  const identity = vendor === "edge" && edgeMajorVersion(win.navigator) >= 158
+    ? { vendor, model: "edge-aion" } as const
+    : { vendor };
   let answer: LanguageModelAvailability;
   try {
     answer = await api.availability(expectations());
   } catch {
-    return { kind: "unavailable", vendor };
+    return { kind: "unavailable", ...identity };
   }
   switch (answer) {
     case "available":
     case "downloadable":
     case "downloading":
-      return { kind: answer, vendor };
+      return { kind: answer, ...identity };
     default:
-      return { kind: "unavailable", vendor };
+      return { kind: "unavailable", ...identity };
   }
 }
 

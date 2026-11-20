@@ -275,6 +275,39 @@ describe("PrivateEngineManager", () => {
     expect(t.webllm.loads).toEqual([]);
   });
 
+  it("terminal Enable failure reaches unavailable when WebGPU is absent", async () => {
+    const t = setup({ builtin: "downloadable", createErrors: ["NotSupportedError"], report: NO_GPU });
+    await t.manager.start();
+    await t.manager.enableBuiltin();
+
+    const state = t.manager.getState();
+    expect(t.fake!.state.availability).toBe("downloadable");
+    expect(isUnavailable(state)).toBe(true);
+    expect(state.active).toBeNull();
+    expect(state.builtin.error).toBe("unsupported");
+    expect(t.webllm.loads).toEqual([]);
+    await t.manager.enableBuiltin();
+    expect(t.fake!.state.createCalls).toHaveLength(1);
+  });
+
+  it("terminal Enable failure switches to WebLLM setup when a tier is selectable", async () => {
+    const t = setup({ builtin: "downloadable", createErrors: ["NotSupportedError"] });
+    await t.manager.start();
+    t.fake!.state.availability = "available";
+    await t.manager.enableBuiltin();
+
+    const state = t.manager.getState();
+    expect(isUnavailable(state)).toBe(false);
+    expect(state).toMatchObject({
+      active: "webllm",
+      builtin: { status: { kind: "unavailable" }, error: "unsupported" },
+      webllm: { kind: "setup", cached: false, phase: "idle" },
+    });
+    expect(t.webllm.loads).toEqual([]);
+    await t.manager.downloadSelected();
+    expect(t.manager.getState().webllm?.kind).toBe("ready");
+  });
+
   it("upgrade: the tier downloads in the background while the built-in model answers; the user switches", async () => {
     const t = setup({ builtin: "available" });
     await t.manager.start();

@@ -8,7 +8,7 @@
  * Providers:
  *   - `builtin-prompt-api`: the `LanguageModel` Prompt API. Used only in
  *     browsers whose vendor documents on-device inference: Google Chrome
- *     (Gemini Nano) and Microsoft Edge (Aion Instruct). The spec allows a
+ *     (Gemini Nano) and Microsoft Edge. The spec allows a
  *     browser to back the API with a cloud service and gives pages no way to
  *     tell, so any other browser exposing it is "not verified on-device" and
  *     is never used.
@@ -25,12 +25,13 @@ export type PrivateProviderId = "builtin-prompt-api" | "builtin-apple-foundation
 
 /** Browsers whose vendor documents that the Prompt API model runs on the device. */
 export type BuiltinVendor = "chrome" | "edge";
+export type BuiltinModelKey = BuiltinVendor | "edge-aion";
 
 /** The one language list passed to every Prompt API call (availability, create). */
 export const BUILTIN_LANGUAGES: readonly string[] = ["en"];
 
 export const BUILTIN_MODEL: Record<
-  BuiltinVendor,
+  BuiltinModelKey,
   { id: string; modelName: string; displayName: string; browser: string; vendorName: string }
 > = {
   chrome: {
@@ -41,6 +42,13 @@ export const BUILTIN_MODEL: Record<
     vendorName: "Google",
   },
   edge: {
+    id: "builtin/edge",
+    modelName: "Microsoft Edge built-in model",
+    displayName: "Microsoft Edge built-in model",
+    browser: "Edge",
+    vendorName: "Microsoft",
+  },
+  "edge-aion": {
     id: "builtin/edge-aion-instruct",
     modelName: "Aion Instruct",
     displayName: "Aion Instruct (built into Edge)",
@@ -54,10 +62,11 @@ export const BUILTIN_MODEL: Record<
  * quoted, nothing added. Chrome: developer.chrome.com/docs/ai/prompt-api.
  * Edge: learn.microsoft.com/en-us/microsoft-edge/web-platform/prompt-api.
  */
-export const BUILTIN_PRIVACY_COPY: Record<BuiltinVendor, string> = {
+export const BUILTIN_PRIVACY_COPY: Record<BuiltinModelKey, string> = {
   chrome:
     "Chrome runs Gemini Nano on your device. Google says: “Subsequent use of the model does not require a network connection. No data is sent to Google or any third party when using the model.”",
-  edge: "Edge runs Aion Instruct on your device. Microsoft says: “The data input to the model never leaves the device.”",
+  edge: "Edge runs its built-in model on your device. Microsoft says: “The data input to the model never leaves the device.”",
+  "edge-aion": "Edge runs Aion Instruct on your device. Microsoft says: “The data input to the model never leaves the device.”",
 };
 
 /** Context window to assume before a built-in session reports its own. */
@@ -68,11 +77,11 @@ export interface BuiltinModelDescriptor extends ModelDescriptorBase {
   vendor: BuiltinVendor;
 }
 
-export function builtinDescriptor(vendor: BuiltinVendor, contextWindowTokens?: number): BuiltinModelDescriptor {
-  const model = BUILTIN_MODEL[vendor];
+export function builtinDescriptor(key: BuiltinModelKey, contextWindowTokens?: number): BuiltinModelDescriptor {
+  const model = BUILTIN_MODEL[key];
   return {
     provider: "builtin-prompt-api",
-    vendor,
+    vendor: key === "edge-aion" ? "edge" : key,
     id: model.id,
     displayName: model.displayName,
     contextWindowTokens: contextWindowTokens ?? BUILTIN_DEFAULT_CONTEXT_TOKENS,
@@ -85,15 +94,16 @@ export function builtinDescriptor(vendor: BuiltinVendor, contextWindowTokens?: n
  *   - `unverified`: the API exists, but the browser is not Chrome or Edge, so
  *     on-device inference is not documented; never used.
  *   - `unavailable` / `downloadable` / `downloading` / `available`: the
- *     browser's own `availability()` answer.
+ *     browser's `availability()` answer, with terminal initialization failures
+ *     recorded as unavailable.
  */
 export type BuiltinStatus =
   | { kind: "absent" }
   | { kind: "unverified" }
-  | { kind: "unavailable"; vendor: BuiltinVendor }
-  | { kind: "downloadable"; vendor: BuiltinVendor }
-  | { kind: "downloading"; vendor: BuiltinVendor }
-  | { kind: "available"; vendor: BuiltinVendor };
+  | (
+      ({ vendor: "chrome"; model?: never } | { vendor: "edge"; model?: "edge-aion" }) &
+      ({ kind: "unavailable" } | { kind: "downloadable" } | { kind: "downloading" } | { kind: "available" })
+    );
 
 /** The built-in model can be used now, or after the browser's one-time download. */
 export function builtinUsable(

@@ -15,7 +15,6 @@ import {
   BUILTIN_MODEL,
   BUILTIN_PRIVACY_COPY,
   builtinUsable,
-  type BuiltinVendor,
 } from "@/lib/private/core/provider-policy";
 import { downloadTextFile } from "@/lib/private/web/browser";
 import { StoragePersistence } from "@/lib/private/web/storage-persistence";
@@ -210,21 +209,24 @@ function EngineNotice({
       <UnavailableState
         reason={state.webllm.reason}
         builtin={state.builtin.status}
+        builtinUnsupported={state.builtin.error === "unsupported"}
         onRetryBlocked={() => void manager.retryBlocked()}
       />
     );
   }
 
   const { builtin, webllm } = state;
-  const vendor: BuiltinVendor | null = builtinUsable(builtin.status) ? builtin.status.vendor : null;
-  const hasBuiltin = vendor !== null;
+  const builtinStatus = builtinUsable(builtin.status) ? builtin.status : null;
+  const modelKey = builtinStatus ? builtinStatus.model ?? builtinStatus.vendor : null;
+  const hasBuiltin = modelKey !== null;
   const parts: React.ReactNode[] = [];
 
-  if (vendor && state.active === "builtin" && builtin.phase !== "ready") {
+  if (builtinStatus && state.active === "builtin" && builtin.phase !== "ready") {
     parts.push(
       <BuiltinSetup
         key="builtin"
-        vendor={vendor}
+        vendor={builtinStatus.vendor}
+        modelKey={builtinStatus.model}
         status={builtin.status.kind}
         phase={builtin.phase}
         progress={builtin.progress}
@@ -245,7 +247,7 @@ function EngineNotice({
       <ModelSetup
         key="webllm"
         variant={hasBuiltin ? "upgrade" : "setup"}
-        builtinName={vendor ? BUILTIN_MODEL[vendor].modelName : null}
+        builtinName={modelKey ? BUILTIN_MODEL[modelKey].modelName : null}
         autoSwitch={state.autoSwitch}
         onAutoSwitchChange={hasBuiltin ? (value) => manager.setAutoSwitch(value) : undefined}
         onClose={hasBuiltin ? () => manager.openUpgrade(false) : undefined}
@@ -308,8 +310,9 @@ function PrivateShell({
   const modelName = shell === "running" ? chatModelName(engine) : null;
   const ready = modelName !== null;
   const safariBeta = engine.isSafari;
-  const builtinVendor =
-    engine.active === "builtin" && builtinUsable(engine.builtin.status) ? engine.builtin.status.vendor : null;
+  const builtinStatus =
+    engine.active === "builtin" && builtinUsable(engine.builtin.status) ? engine.builtin.status : null;
+  const modelKey = builtinStatus ? builtinStatus.model ?? builtinStatus.vendor : null;
   const persistState = useSyncExternalStore(
     persistence.subscribe,
     persistence.getState,
@@ -387,10 +390,10 @@ function PrivateShell({
           {ready && state.messages.length === 0 && !engine.upgradeOpen && (
             <div className="mx-auto max-w-xl px-6 py-20 text-center">
               <h1 className="text-lg font-semibold tracking-tight">Private Mode</h1>
-              {builtinVendor ? (
+              {modelKey ? (
                 <p className="text-muted-foreground mt-2 text-sm leading-6" data-privacy-copy="builtin">
-                  Answers come from {BUILTIN_MODEL[builtinVendor].displayName}.{" "}
-                  {BUILTIN_PRIVACY_COPY[builtinVendor]} Your messages stay in this browser and are
+                  Answers come from {BUILTIN_MODEL[modelKey].displayName}.{" "}
+                  {BUILTIN_PRIVACY_COPY[modelKey]} Your messages stay in this browser and are
                   never sent to KORUM.
                 </p>
               ) : (

@@ -135,7 +135,8 @@ export function descriptorFor(decision: OkDecision): LocalModelDescriptor {
 /** The model the chat can use right now, or null. */
 export function chatModelName(state: EngineState): string | null {
   if (state.active === "builtin" && state.builtin.phase === "ready" && "vendor" in state.builtin.status) {
-    return BUILTIN_MODEL[state.builtin.status.vendor].displayName;
+    const { model, vendor } = state.builtin.status;
+    return BUILTIN_MODEL[model ?? vendor].displayName;
   }
   if (state.active === "webllm" && state.webllm?.kind === "ready") return state.webllm.decision.model.displayName;
   return null;
@@ -299,14 +300,15 @@ export class PrivateEngineManager {
   enableBuiltin(): Promise<void> {
     const status = this.state.builtin.status;
     if (this.disposed || !builtinUsable(status) || this.state.builtin.phase !== "idle") return Promise.resolve();
-    const vendor = status.vendor;
+    const { vendor } = status;
+    const model = status.model ?? vendor;
     const engine = (this.builtinEngine ??= this.deps.createBuiltin(vendor));
     const abort = new AbortController();
     this.builtinAbort = abort;
     this.setBuiltin({ phase: "loading", progress: null, error: null });
 
     const loading = engine.load(
-      builtinDescriptor(vendor),
+      builtinDescriptor(model),
       (progress) => {
         if (this.state.builtin.phase === "loading") this.setBuiltin({ progress: progress.fraction });
       },
@@ -315,8 +317,8 @@ export class PrivateEngineManager {
     return loading.then(
       () => {
         this.builtinAbort = null;
-        this.builtinModel = builtinDescriptor(vendor, engine.contextWindowTokens ?? undefined);
-        this.setBuiltin({ status: { kind: "available", vendor }, phase: "ready", progress: null, error: null });
+        this.builtinModel = builtinDescriptor(model, engine.contextWindowTokens ?? undefined);
+        this.setBuiltin({ status: { ...status, kind: "available" }, phase: "ready", progress: null, error: null });
         if (this.state.active === "builtin") this.setActive("builtin");
       },
       async (error: unknown) => {
@@ -334,7 +336,10 @@ export class PrivateEngineManager {
     this.setBuiltin({ phase: "loading", progress: null, error: null });
     if (this.state.active === "builtin") this.deps.controller.setModel(null);
     await this.builtinEngine?.unload().catch(() => undefined);
-    const fresh = await this.deps.detectBuiltin().catch((): BuiltinStatus => ({ kind: "absent" }));
+    const advertised = await this.deps.detectBuiltin().catch((): BuiltinStatus => ({ kind: "absent" }));
+    const fresh: BuiltinStatus = kind === "unsupported" && builtinUsable(previous)
+      ? { ...previous, kind: "unavailable" }
+      : advertised;
     if (this.disposed) return;
     if (!builtinUsable(fresh) || !builtinUsable(previous) || fresh.vendor !== previous.vendor) {
       this.builtinEngine = null;

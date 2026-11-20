@@ -7,6 +7,7 @@ import type { LocalRuntimeErrorKind } from "@/lib/private/core/local-provider";
 import {
   BUILTIN_MODEL,
   BUILTIN_PRIVACY_COPY,
+  type BuiltinModelKey,
   type BuiltinVendor,
 } from "@/lib/private/core/provider-policy";
 
@@ -37,6 +38,7 @@ function errorText(vendor: BuiltinVendor, kind: LocalRuntimeErrorKind): string {
  */
 export function BuiltinSetup({
   vendor,
+  modelKey = vendor,
   status,
   phase,
   progress,
@@ -45,6 +47,7 @@ export function BuiltinSetup({
   onShowUpgrades,
 }: {
   vendor: BuiltinVendor;
+  modelKey?: BuiltinModelKey;
   status: "downloadable" | "downloading" | "available" | "unavailable" | "absent" | "unverified";
   phase: "idle" | "loading" | "ready";
   progress: number | null;
@@ -52,7 +55,7 @@ export function BuiltinSetup({
   onEnable: () => void;
   onShowUpgrades?: () => void;
 }) {
-  const model = BUILTIN_MODEL[vendor];
+  const model = BUILTIN_MODEL[modelKey];
   const percent = progress === null ? null : Math.round(progress * 100);
   const downloading = phase === "loading" && (status !== "available" || progress !== null);
 
@@ -63,7 +66,7 @@ export function BuiltinSetup({
         <p className="flex items-center gap-2 text-sm font-medium">
           <Cpu className="size-4" aria-hidden /> {model.displayName}
         </p>
-        <p className="text-muted-foreground text-sm leading-6">{BUILTIN_PRIVACY_COPY[vendor]}</p>
+        <p className="text-muted-foreground text-sm leading-6">{BUILTIN_PRIVACY_COPY[modelKey]}</p>
         <p className="text-muted-foreground text-sm leading-6">
           KORUM doesn&apos;t download this model. Your chats stay in this browser and are never sent
           to KORUM.
@@ -91,7 +94,7 @@ export function BuiltinSetup({
                 ? `${model.modelName} is on this device.`
                 : vendor === "chrome"
                   ? "Chrome needs to download Gemini Nano once. Chrome does the download, not KORUM."
-                  : "Edge needs to download Aion Instruct before you can use it."}
+                  : `Edge needs to download ${modelKey === "edge-aion" ? model.modelName : "its built-in model"} before you can use it.`}
           </p>
           <Button className="w-full" onClick={onEnable}>
             {status === "available" ? `Start ${model.modelName}` : enableLabel(vendor)}

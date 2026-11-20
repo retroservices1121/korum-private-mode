@@ -10,9 +10,10 @@ This repository contains the Private Mode client and runtime only.
 
 Private Mode defaults to the browser's built-in model when it can run. Desktop
 Chrome 148 or later provides Gemini Nano, and Chrome handles any initial model
-download when you click **Enable**. Microsoft Edge provides Aion Instruct as a
-developer preview behind a browser flag or an origin trial. Korum has no Edge
-origin-trial registration. [Chrome Prompt API](https://developer.chrome.com/docs/ai/prompt-api),
+download when you click **Enable**. Microsoft Edge offers a built-in model as a
+developer preview behind a browser flag or an origin trial. Private Mode labels
+it Aion Instruct when it can confirm Edge 158 or later and uses “Microsoft Edge
+built-in model” otherwise. Korum has no Edge origin-trial registration. [Chrome Prompt API](https://developer.chrome.com/docs/ai/prompt-api),
 [Edge Prompt API](https://learn.microsoft.com/en-us/microsoft-edge/web-platform/prompt-api)
 
 Private Mode requires a secure context and a verified Google Chrome or Microsoft
@@ -198,11 +199,12 @@ npm run test:e2e    # Playwright (Chromium and WebKit)
 `npm run test:e2e` starts two production servers, one after the other:
 
 - **Port 3100:** the normal production build (`npm run build && next start`).
-  It runs the unavailable-state, privacy, CSP and offline tests.
+  It runs the unavailable-state, privacy, CSP and offline tests, plus the
+  built-in browser tests in `e2e/builtin.spec.ts` with a test-injected
+  `LanguageModel` in Chromium and WebKit.
 - **Port 3101:** the same app built with `KORUM_E2E_MOCK_PROVIDER=1` into a
   separate `.next-e2e-mock` directory. A scripted mock engine replaces WebLLM,
-  so the chat UI tests can run without a GPU. Built-in tests install a fake
-  Prompt API and exercise the real adapter in Chromium and WebKit.
+  so the scripted WebLLM chat UI tests can run without a GPU.
 
 The end-to-end setup has these safeguards:
 
@@ -276,8 +278,8 @@ Copyright 2026 Mobi Media, Inc. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
 The model weights are **not** part of this repository and are **not**
 relicensed by this project. Each model keeps its own license:
 
-- **Gemini Nano and Aion Instruct:** their browser vendors provide them under
-  their own terms. This repository does not distribute either model.
+- **Gemini Nano and Microsoft Edge built-in models:** their browser vendors
+  provide them under their own terms. This repository does not distribute them.
 - **Qwen3-8B, Qwen3-4B, Qwen3-1.7B:** Apache License 2.0, by the Qwen team
   (Alibaba Cloud). Each model card lists `license: apache-2.0` and ships an
   Apache-2.0 LICENSE.

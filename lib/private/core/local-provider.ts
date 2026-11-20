@@ -15,7 +15,7 @@ import type { ModelTier, WebLLMArtifact } from "./model-catalog";
 /**
  * `webllm`: the KORUM-hosted open-weights tiers (WebGPU, Web Worker).
  * `builtin-prompt-api`: the model built into the browser (Chrome's Gemini
- * Nano, Edge's Aion Instruct) through the `LanguageModel` Prompt API.
+ * Nano or the Microsoft Edge built-in model) through the `LanguageModel` Prompt API.
  * `builtin-apple-foundation`: Apple's Foundation Models through a future
  * native shell bridge; a stub on the web (see `provider-policy.ts`).
  */

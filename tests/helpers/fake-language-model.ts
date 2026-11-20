@@ -133,6 +133,16 @@ export const EDGE_NAV = {
   },
 };
 
+export const OLDER_EDGE_NAV = {
+  userAgent: EDGE_NAV.userAgent.replace("Edg/158", "Edg/128"),
+  userAgentData: { mobile: false, brands: [{ brand: "Microsoft Edge", version: "128" }] },
+};
+
+export const UNVERSIONED_EDGE_NAV = {
+  userAgent: CHROME_NAV.userAgent,
+  userAgentData: { mobile: false, brands: [{ brand: "Microsoft Edge", version: "unknown" }] },
+};
+
 export const OPERA_NAV = {
   userAgent:
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 OPR/130.0.0.0",
