@@ -1,0 +1,35 @@
+# dependencies
+/node_modules
+
+# testing
+/coverage
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# next.js
+/.next/
+# e2e build with the scripted engine (KORUM_E2E_MOCK_PROVIDER=1)
+/.next-e2e-mock/
+/out/
+/build
+
+# build-generated offline shell and service worker
+/public/private-offline/
+/public/private-sw.js
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+
+# env files (the template carries no values and is committed)
+.env*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

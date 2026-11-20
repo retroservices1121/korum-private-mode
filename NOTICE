@@ -1,0 +1,28 @@
+Korum Private Mode
+Copyright 2026 Mobi Media, Inc.
+
+This product includes software developed by Mobi Media, Inc. (https://korum.to).
+
+
+Third-party model weights (not part of this distribution)
+---------------------------------------------------------
+
+This repository contains no model weights. At runtime the app downloads
+pre-quantized MLC builds of the models below (from mlc-ai on Hugging Face,
+https://huggingface.co/mlc-ai, with WebGPU model libraries from
+https://github.com/mlc-ai/binary-mlc-llm-libs), mirrored on Korum's
+Cloudflare R2 bucket. The weights are NOT licensed under Apache-2.0 by
+Mobi Media, Inc.; they remain under their own licenses.
+
+Llama 3.2 (Llama-3.2-3B-Instruct)
+  Llama 3.2 is licensed under the Llama 3.2 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.
+  Built with Llama.
+  A copy of the Llama 3.2 Community License Agreement and the Llama 3.2
+  Acceptable Use Policy is included in third_party/llama-3.2/.
+
+Qwen3 (Qwen3-8B, Qwen3-4B, Qwen3-1.7B)
+  Developed by the Qwen team (Alibaba Cloud) and licensed under the
+  Apache License, Version 2.0.
+
+@mlc-ai/web-llm
+  Licensed under the Apache License, Version 2.0.
