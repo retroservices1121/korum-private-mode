@@ -32,8 +32,8 @@ export const POLICY = {
   lMinMaxBufferSize: 1 * GiB,
   lVendors: ["nvidia", "amd", "apple"] as readonly string[],
   minDeviceMemoryGB: 8,
-  /** Below this known deviceMemory, Light (3B) is not proposed; Lite (1.7B) is. */
-  liteBelowDeviceMemoryGB: 4,
+  /** Below this known deviceMemory, Mini (0.6B) is proposed. */
+  miniBelowDeviceMemoryGB: 4,
   /** Two failures inside this window block a tier. */
   failureWindowMs: 7 * 24 * 60 * 60 * 1000,
   failuresToBlock: 2,
@@ -130,6 +130,12 @@ export function heuristicTier(report: CapabilityReport): ModelTier {
   const free = report.freeStorageBytes;
   const vendor = report.gpuVendor?.toLowerCase() ?? null;
 
+  // Phones (deviceMemory is capped at 8 and absent on iOS, so it cannot tell
+  // a phone from a laptop) and known low-memory devices get Mini. Lite stays
+  // a manual upgrade and a step-down target.
+  if (report.isMobile) return "XXS";
+  if (memory !== null && memory < POLICY.miniBelowDeviceMemoryGB) return "XXS";
+
   const lFits =
     report.shaderF16 &&
     memory !== null &&
@@ -145,7 +151,6 @@ export function heuristicTier(report: CapabilityReport): ModelTier {
   const mStorage = free === null || free >= POLICY.mMinFreeStorageBytes;
   if (memory !== null) {
     if (memory >= POLICY.minDeviceMemoryGB && mStorage) return "M";
-    if (memory < POLICY.liteBelowDeviceMemoryGB) return "XS";
     return "S";
   }
   // Unknown deviceMemory (Safari/Firefox): proposed, not assumed.

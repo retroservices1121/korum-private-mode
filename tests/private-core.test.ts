@@ -3,7 +3,15 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 import { estimateTokens, localBudget } from "@/lib/private/core/context-budget";
-import { MODEL_CATALOG, tierTitle } from "@/lib/private/core/model-catalog";
+import {
+  CATALOG_VERSION,
+  formatBytes,
+  MODEL_CATALOG,
+  modelForTier,
+  TIER_LABEL,
+  TIER_ORDER,
+  tierTitle,
+} from "@/lib/private/core/model-catalog";
 import { stripThinking, ThinkFilter } from "@/lib/private/core/think-filter";
 
 describe("localBudget", () => {
@@ -80,17 +88,50 @@ describe("model catalog matches WebLLM 0.2.88 prebuilt records", () => {
     }
   }
 
-  it("labels Lite honestly", () => {
+  it("labels Mini and Lite honestly", () => {
+    expect(tierTitle("XXS")).toBe("Mini: lowest quality");
     expect(tierTitle("XS")).toBe("Lite: lower quality");
     expect(tierTitle("S")).toBe("Light");
+    expect(TIER_LABEL).toEqual({ XXS: "Mini", XS: "Lite", S: "Light", M: "Balanced", L: "Best" });
   });
 
-  it("has exactly one model per tier, XS/S/M/L = Qwen3-1.7B / Llama-3.2-3B / Qwen3-4B / Qwen3-8B", () => {
+  it("has exactly one model per tier, XXS/XS/S/M/L = Qwen3-0.6B / Qwen3-1.7B / Llama-3.2-3B / Qwen3-4B / Qwen3-8B", () => {
+    expect(TIER_ORDER).toEqual(["XXS", "XS", "S", "M", "L"]);
     expect(MODEL_CATALOG.map((m) => [m.tier, m.id])).toEqual([
+      ["XXS", "local/qwen3-0.6b"],
       ["XS", "local/qwen3-1.7b"],
       ["S", "local/llama-3.2-3b"],
       ["M", "local/qwen3-4b"],
       ["L", "local/qwen3-8b"],
     ]);
+  });
+
+  it("Mini is Qwen3 0.6B (Apache-2.0), thinking off, with both quantizations", () => {
+    const mini = modelForTier("XXS");
+    expect(mini).toMatchObject({
+      displayName: "Qwen3 0.6B",
+      lab: "qwen",
+      license: "Apache-2.0",
+      hybridThinking: true,
+      qualityNote: "lowest quality",
+    });
+    expect(mini.webllm.f16).toMatchObject({
+      modelId: "Qwen3-0.6B-q4f16_1-MLC",
+      quantization: "q4f16_1",
+      requiresShaderF16: true,
+      vramRequiredMB: 1403,
+      downloadBytes: 358_075_755,
+      contextWindowTokens: 4096,
+    });
+    expect(mini.webllm.f32).toMatchObject({
+      modelId: "Qwen3-0.6B-q4f32_1-MLC",
+      quantization: "q4f32_1",
+      requiresShaderF16: false,
+      vramRequiredMB: 1925,
+      downloadBytes: 358_082_684,
+      contextWindowTokens: 4096,
+    });
+    expect(formatBytes(mini.webllm.f16.downloadBytes)).toBe("358 MB");
+    expect(CATALOG_VERSION).toBe("2026-11-21.1");
   });
 });

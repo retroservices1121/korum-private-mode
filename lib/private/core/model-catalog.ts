@@ -3,15 +3,20 @@ import { pinnedModel, pinnedLib, sriFromHex } from "./model-pins";
 import { MODELS_BASE_URL } from "./models-host";
 
 /**
+ * XXS ("Mini", Qwen3-0.6B) is the smallest tier, so phones can run Private
+ * Mode. It is the auto default on phones and on low-memory devices, and is
+ * labelled "lowest quality".
+ *
  * XS ("Lite", ~1.7B) is below the otherwise 3–8B range on purpose: it exists
  * for low-memory devices that cannot fit Light. It is labelled as lower quality wherever it is offered.
  */
-export type ModelTier = "XS" | "S" | "M" | "L";
+export type ModelTier = "XXS" | "XS" | "S" | "M" | "L";
 
-/** Smallest first; stepping down walks this right to left (L → M → S → XS). */
-export const TIER_ORDER: readonly ModelTier[] = ["XS", "S", "M", "L"] as const;
+/** Smallest first; stepping down walks this right to left (L → M → S → XS → XXS). */
+export const TIER_ORDER: readonly ModelTier[] = ["XXS", "XS", "S", "M", "L"] as const;
 
 export const TIER_LABEL: Record<ModelTier, string> = {
+  XXS: "Mini",
   XS: "Lite",
   S: "Light",
   M: "Balanced",
@@ -19,7 +24,7 @@ export const TIER_LABEL: Record<ModelTier, string> = {
 };
 
 /** Bumped whenever an artifact URL, revision or pin changes. */
-export const CATALOG_VERSION = "2026-11-14.1";
+export const CATALOG_VERSION = "2026-11-21.1";
 
 export interface ArtifactPins {
   /** SRI ("sha256-BASE64") of `mlc-chat-config.json`. */
@@ -98,6 +103,19 @@ function webllm(
 
 export const MODEL_CATALOG: readonly CatalogModel[] = [
   {
+    id: "local/qwen3-0.6b",
+    tier: "XXS",
+    displayName: "Qwen3 0.6B",
+    lab: "qwen",
+    license: "Apache-2.0",
+    hybridThinking: true,
+    qualityNote: "lowest quality",
+    webllm: {
+      f16: webllm("Qwen3-0.6B-q4f16_1-MLC", "q4f16_1", 1403),
+      f32: webllm("Qwen3-0.6B-q4f32_1-MLC", "q4f32_1", 1925),
+    },
+  },
+  {
     id: "local/qwen3-1.7b",
     tier: "XS",
     displayName: "Qwen3 1.7B",
@@ -154,7 +172,7 @@ export function modelForTier(tier: ModelTier): CatalogModel {
   return model;
 }
 
-/** "Best", "Balanced", "Light", or "Lite: lower quality". */
+/** "Best", "Balanced", "Light", "Lite: lower quality" or "Mini: lowest quality". */
 export function tierTitle(tier: ModelTier): string {
   const note = modelForTier(tier).qualityNote;
   return note ? `${TIER_LABEL[tier]}: ${note}` : TIER_LABEL[tier];

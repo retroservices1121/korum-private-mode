@@ -35,15 +35,18 @@ The catalog is in `lib/private/core/model-catalog.ts`. Every tier comes in two
 builds: `q4f16_1` for GPUs that support `shader-f16`, and `q4f32_1` for GPUs
 that don't. The app picks the right build automatically.
 
-| Tier | Label    | Model                 | Download (approx.) |
-| ---- | -------- | --------------------- | ------------------ |
-| `L`  | Best     | Qwen3 8B              | 4.6 GB             |
-| `M`  | Balanced | Qwen3 4B              | 2.3 GB             |
-| `S`  | Light    | Llama 3.2 3B Instruct | 1.8 GB             |
-| `XS` | Lite     | Qwen3 1.7B            | 1.0 GB             |
+| Tier  | Label    | Model                 | Download (approx.) |
+| ----- | -------- | --------------------- | ------------------ |
+| `L`   | Best     | Qwen3 8B              | 4.6 GB             |
+| `M`   | Balanced | Qwen3 4B              | 2.3 GB             |
+| `S`   | Light    | Llama 3.2 3B Instruct | 1.8 GB             |
+| `XS`  | Lite     | Qwen3 1.7B            | 1.0 GB             |
+| `XXS` | Mini     | Qwen3 0.6B            | 0.4 GB             |
 
-The UI labels Lite "lower quality". It is there for low-memory devices that
-can't fit Light. Qwen3's hybrid "thinking" mode is turned off.
+The UI labels Lite "lower quality" and Mini "lowest quality". Mini is the
+default on phones and tablets and on low-memory devices. Lite is a manual
+upgrade from Mini and a step-down target from Light. Qwen3's hybrid "thinking"
+mode is turned off.
 
 ### How a tier is selected
 
@@ -57,16 +60,18 @@ pure function with table tests in `tests/private-tier-policy.test.ts`.
    download size plus 20% headroom, when the browser reports a quota) and is
    not blocked.
 3. **Recommendation** (`heuristicTier`). The thresholds are provisional.
+   - **Mini:** used on phones and tablets (a mobile user agent,
+     `userAgentData.mobile`, or iPadOS in desktop mode), whatever memory they
+     report, and when known device memory is below 4 GB.
    - **Best:** needs `shader-f16`, `navigator.deviceMemory` of at least 8, a
      `maxBufferSize` of at least 1 GiB, an NVIDIA, AMD or Apple GPU, and at
      least 10 GB of free storage.
    - **Balanced:** needs at least 8 GB of device memory and at least 5 GB of
      free storage (or an unknown amount).
-   - **Lite:** used when device memory is below 4 GB.
    - **Light:** used in all other cases.
    - **Unknown device memory.** `deviceMemory` is Chromium-only, so on other
      browsers memory is usually unknown. An Apple GPU with `shader-f16` gets
-     Balanced. Everything else gets Light.
+     Balanced. Everything else gets Light. Phones still get Mini.
 4. **Choice.** You can keep "auto" or pick any selectable tier by hand.
 
 ### How step-down works
@@ -78,9 +83,10 @@ memory, GPU device lost, or pipeline creation failed. On one of these,
 1. It records the failure. Only the tier and a timestamp are stored, never any
    content.
 2. It runs `pickTier` again:
-   - In auto mode, it steps down (L → M → S → XS) past any tier that failed in
+   - In auto mode, it steps down (L → M → S → XS → XXS) past any tier that failed in
      the last 7 days.
    - Two failures within 7 days block a tier, even if you picked it by hand.
+   - Auto mode never steps up, and never falls back to a cloud model.
 3. If the next tier down is already cached, it loads straight away. If not, the
    download needs your explicit approval.
 4. If no tier is left, the app shows the unavailable state.
@@ -280,12 +286,13 @@ relicensed by this project. Each model keeps its own license:
 
 - **Gemini Nano and Microsoft Edge built-in models:** their browser vendors
   provide them under their own terms. This repository does not distribute them.
-- **Qwen3-8B, Qwen3-4B, Qwen3-1.7B:** Apache License 2.0, by the Qwen team
+- **Qwen3-8B, Qwen3-4B, Qwen3-1.7B, Qwen3-0.6B:** Apache License 2.0, by the Qwen team
   (Alibaba Cloud). Each model card lists `license: apache-2.0` and ships an
   Apache-2.0 LICENSE.
   - <https://huggingface.co/Qwen/Qwen3-8B>
   - <https://huggingface.co/Qwen/Qwen3-4B>
   - <https://huggingface.co/Qwen/Qwen3-1.7B>
+  - <https://huggingface.co/Qwen/Qwen3-0.6B>
 - **Llama-3.2-3B-Instruct:** the Llama 3.2 Community License Agreement, which
   is not an open-source license, plus the Llama 3.2 Acceptable Use Policy. The
   key obligations are:
