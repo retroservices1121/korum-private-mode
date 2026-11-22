@@ -6,7 +6,7 @@ import {
   type LocalProvider,
   type LocalStreamRequest,
 } from "@/lib/private/core/local-provider";
-import { artifactFor, modelForTier } from "@/lib/private/core/model-catalog";
+import { artifactFor, modelForTier, type ModelTier } from "@/lib/private/core/model-catalog";
 
 export const CAPABLE_REPORT: CapabilityReport = {
   runtime: "webllm",
@@ -20,9 +20,10 @@ export const CAPABLE_REPORT: CapabilityReport = {
   deviceMemoryGB: 8,
   freeStorageBytes: 50e9,
   isSafari: false,
+  isMobile: false,
 };
 
-export function descriptor(tier: "XS" | "S" | "M" | "L" = "M"): LocalModelDescriptor {
+export function descriptor(tier: ModelTier = "M"): LocalModelDescriptor {
   const model = modelForTier(tier);
   const artifact = artifactFor(model, true);
   return {

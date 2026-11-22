@@ -51,6 +51,11 @@ export interface CapabilityReport {
   freeStorageBytes: number | null;
   /** The browser runs as Safari (affects the ITP storage notice only). */
   isSafari: boolean;
+  /**
+   * A phone or tablet (mobile UA, `userAgentData.mobile`, or iPadOS in
+   * desktop mode). Phones get Mini by default even when they report 8 GB.
+   */
+  isMobile: boolean;
 }
 
 /** What the chat controller needs to know about any on-device model. */

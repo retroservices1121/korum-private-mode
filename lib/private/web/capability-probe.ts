@@ -5,13 +5,15 @@
 
 import type { CapabilityReport } from "@/lib/private/core/local-provider";
 
-import { isSafariUA } from "./browser";
+import { isMobileUA, isSafariUA } from "./browser";
 
 interface NavigatorLike {
   gpu?: { requestAdapter(options?: unknown): Promise<AdapterLike | null> };
   deviceMemory?: number;
   storage?: { estimate?: () => Promise<{ quota?: number; usage?: number }> };
   userAgent?: string;
+  maxTouchPoints?: number;
+  userAgentData?: { mobile?: boolean };
 }
 
 interface AdapterLike {
@@ -36,6 +38,10 @@ export async function probeCapability(
     deviceMemoryGB: typeof nav?.deviceMemory === "number" ? nav.deviceMemory : null,
     freeStorageBytes: null,
     isSafari: isSafariUA(nav?.userAgent ?? ""),
+    isMobile: isMobileUA(nav?.userAgent ?? "", {
+      maxTouchPoints: typeof nav?.maxTouchPoints === "number" ? nav.maxTouchPoints : undefined,
+      uaDataMobile: nav?.userAgentData?.mobile,
+    }),
   };
 
   try {

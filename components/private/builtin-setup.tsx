@@ -114,7 +114,7 @@ export function BuiltinSetup({
           <button type="button" className="underline underline-offset-2" onClick={onShowUpgrades}>
             Better quality options
           </button>{" "}
-          (optional download from KORUM, 1 to 5 GB).
+          (optional download from KORUM: Mini / Qwen3 0.6B and up, 0.4 to 5 GB).
         </p>
       )}
     </div>

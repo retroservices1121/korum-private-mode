@@ -67,6 +67,8 @@ export class E2EMockLocalProvider implements LocalProvider {
       deviceMemoryGB: 8,
       freeStorageBytes: 100 * 1024 ** 3,
       isSafari: isSafariUA(globalThis.navigator?.userAgent ?? ""),
+      // A capable desktop, so the suite's tier expectations stay deterministic.
+      isMobile: false,
     };
   }
 

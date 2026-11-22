@@ -60,10 +60,20 @@ describe("recoverFromCapacityFailure", () => {
     expect(second.next.action !== "unavailable" && second.next.decision.selectable).not.toContain("L");
   });
 
-  it("failing at the lowest tier ends in unavailable, never a remote model", async () => {
+  it("failing at Lite steps down to Mini and asks before downloading", async () => {
     const failures = recordFailure(recordFailure(recordFailure({}, "M", NOW - 3), "L", NOW - 2), "S", NOW - 1);
     const { next } = await recoverFromCapacityFailure({
       report: CAPABLE_REPORT, choice: "auto", failures, failedTier: "XS", now: NOW, isCached: always,
+    });
+    expect(next.action !== "unavailable" && next.decision.tier).toBe("XXS");
+    expect(next.action !== "unavailable" && next.decision.steppedDown).toBe(true);
+  });
+
+  it("failing at the lowest tier (Mini) ends in unavailable, never a remote model", async () => {
+    let failures = recordFailure(recordFailure(recordFailure({}, "M", NOW - 4), "L", NOW - 3), "S", NOW - 2);
+    failures = recordFailure(failures, "XS", NOW - 1);
+    const { next } = await recoverFromCapacityFailure({
+      report: CAPABLE_REPORT, choice: "auto", failures, failedTier: "XXS", now: NOW, isCached: always,
     });
     expect(next).toEqual({ action: "unavailable", reason: "all_tiers_blocked" });
   });

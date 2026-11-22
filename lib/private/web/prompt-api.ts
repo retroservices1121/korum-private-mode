@@ -277,6 +277,7 @@ export class BuiltinPromptApiProvider implements LocalProvider<BuiltinModelDescr
       deviceMemoryGB: null,
       freeStorageBytes: null,
       isSafari: false,
+      isMobile: false,
     };
   }
 
